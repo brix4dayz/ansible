@@ -1,0 +1,27 @@
+- name: SysDig alert for avg. latency of a Service
+  connection: local
+  hosts: localhost
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: create avg. latency alert
+      sysdig_alert:
+        token: "{{ sysdig_token }}"
+        name: "{{ alert_name }}"
+        condition: "avg(avg(net.http.request.time)) > {{ latency_threshold_ns }}"
+        filter: "kubernetes.cluster.id='{{ cluster_id }}' and kubernetes.namespace.name='{{ namespace }}' and kubernetes.service.name='{{ http_service }}'"
+        timespan: "{{ latency_timespan_s }}"
+        notification_channels:
+          - type: email
+            name: "{{ email_name }}"
+            email_recipients:
+              - "{{ email_address }}"
+            enabled: true
+            state: absent
+        severity: warning
+        enabled: true
+        state: absent
+      register: testout
+    - name: dump test output
+      debug:
+        msg: "{{ testout }}"

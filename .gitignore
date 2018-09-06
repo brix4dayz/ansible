@@ -1,3 +1,6 @@
+# REMOVE
+vars.yml
+
 # build products...
 *.py[co]
 build

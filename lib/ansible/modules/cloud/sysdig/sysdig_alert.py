@@ -234,11 +234,11 @@ class SysDigObject(object):
 
     def _get_by_id(self, sysdig_id):
         _result = self.client.get_by_id(self.resource, sysdig_id)
-        return _result['id'], _result
+        return (_result['id'], _result) if _result is not None else (None, None)
 
     def _get_by_name(self, name):
         _result = self.client.get_by_name(self.resource, name)
-        return _result['id'], _result
+        return (_result['id'], _result) if _result is not None else (None, None)
 
     def create(self):
         if self.exists:

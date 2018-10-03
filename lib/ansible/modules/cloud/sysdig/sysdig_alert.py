@@ -390,7 +390,7 @@ class SysDigNotificationChannel(SysDigObject):
                 'json_field': 'serviceName',
                 'type': str
             },
-            'notify_on_ok': {  # TODO: translate same ansible arg into different JSON arg?
+            'resolve_on_ok': {
                 'json_field': 'resolveOnOk',
                 'type': bool
             }

@@ -108,6 +108,7 @@ message:
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.urls import open_url
+from urllib2 import HTTPError
 import json
 
 
@@ -119,9 +120,11 @@ class SysDigException(Exception):
 
 
 class SysDigClientException(SysDigException):
-    def __init__(self, error, msg, status_code):
+    def __init__(self, error, msg, status_code, url, http_msg):
         super(SysDigClientException, self).__init__(error=error, msg=msg)
         self.status_code = status_code
+        self.http_msg = http_msg
+        self.url = url
 
 
 class SysDigClient:
@@ -167,16 +170,21 @@ class SysDigClient:
     def update(self, resource, sysdig_id, data):
         json_data = dict()
         json_data[resource] = data
-        resp = open_url(
-            url='%s/api/%ss/%s' % (self.url, resource, sysdig_id),
-            method='PUT',
-            headers=self.headers,
-            data=json.dumps(json_data)
-        )
-        return resp
-        # # TODO check status code
-        # resp_json = json.loads(resp.read())
-        # return resp_json['%s' % resource]
+        try:
+            resp = open_url(
+                url='%s/api/%ss/%s' % (self.url, resource, sysdig_id),
+                method='PUT',
+                headers=self.headers,
+                data=json.dumps(json_data)
+            )
+            resp_json = json.loads(resp.read())
+            return resp_json, resp_json['%s' % resource]
+        except HTTPError as err:
+            raise SysDigClientException(error="failed_update",
+                                        msg="Failed to update resource '%s'" % resource,
+                                        status_code=err.code,
+                                        url=err.url,
+                                        http_msg=err.msg)
 
     def delete(self, resource, sysdig_id):
         resp = open_url(
@@ -184,32 +192,31 @@ class SysDigClient:
             method='DELETE',
             headers=self.headers
         )
-        return resp
+        return
         # # TODO check status code
         # return True
 
     def create(self, resource, data):
         json_data = dict()
         json_data[resource] = data
+        json_data = json.dumps(json_data)
 
         resp = open_url(
             url='%s/api/%ss' % (self.url, resource),
             method='POST',
             headers=self.headers,
-            data=json.dumps(json_data)
+            data=json_data
         )
-        return resp
-        # # TODO check status code
-        # resp_json = json.loads(resp.read())
-        # return resp_json['%s' % resource]
+        # TODO check status code
+        resp_json = json.loads(resp.read())
+        return resp_json, resp_json['%s' % resource]
 
 
 class SysDigObject(object):
 
-    STATE_NEW = 'new'
     STATE_PRESENT = 'present'
     STATE_ABSENT = 'absent'
-    ALLOWED_STATES = (STATE_NEW, STATE_PRESENT, STATE_ABSENT)
+    ALLOWED_STATES = (STATE_PRESENT, STATE_ABSENT)
 
     def __init__(self, client, data):
         if client.__class__ is not SysDigClient:
@@ -219,26 +226,29 @@ class SysDigObject(object):
         self.client = client
 
         if 'state' not in data:
-            raise SysDigException(error="missing_state", msg="Required 'state' is missing.")
+            data['state'] = SysDigObject.STATE_PRESENT
 
         if data['state'] not in self.__class__.ALLOWED_STATES:
             raise SysDigException(error="invalid_state",
                                   msg="State must be one of the following: %s" % str(SysDigObject.ALLOWED_STATES))
         self.state = data['state']
 
-        if self.state == self.__class__.STATE_NEW:
-            self.id, self.obj = (None, None)
-        elif 'id' in data and data['id'] is not None:
+        if 'id' in data and data['id'] is not None:
             self.id, self.obj = self._get_by_id(sysdig_id=data['id'])
         elif 'name' in data:
             self.id, self.obj = self._get_by_name(name=data['name'])
         else:
             raise SysDigException(error="missing_identifier",
-                                  msg="Either 'id' or 'name' must be provided if state is not %s" % SysDigObject.STATE_NEW)
+                                  msg="'name' must be provided, 'id' is optional and improves performance.")
         self.exists = self.id is not None
 
         self._validate(data=data)
         self.data = self._adapt(data=data)
+
+        if self.exists:
+            self.data['id'] = self.id
+            self.data['version'] = self.obj['version']
+
 
     @property
     def resource(self):
@@ -262,21 +272,22 @@ class SysDigObject(object):
         if self.exists:
             raise SysDigException(error="resource_already_exists",
                                   msg="Cannot create resource because it already exists.")
-        _result = self.client.create(self.resource, self.data)
+        _response, _result = self.client.create(self.resource, self.data)
         self.id = _result['id']
         self.exists = True
-        return _result
+        return _response
 
     def update(self):
-        return self.client.update(self.resource, self.id, self.data)
+        _response, _result = self.client.update(self.resource, self.id, self.data)
+        return _response
 
     def delete(self):
         if not self.exists:
             return None  # TODO return result that signals unchanged
-        _result = self.client.delete(self.resource, self.id)
+        _response = self.client.delete(self.resource, self.id)
         self.id = None
         self.exists = False
-        return _result
+        return _response
 
     def sync(self):
         if self.state == self.__class__.STATE_ABSENT:
@@ -390,7 +401,7 @@ class SysDigNotificationChannel(SysDigObject):
 
         if self.channel_type not in self.__class__.TYPE_OPTIONS_MAPPER:
             raise SysDigException(error="invalid_channel_type",
-                                  msg="'type' must be one of the following %s" % str(self.__class__.TYPE_OPTIONS_MAPPER.keys()))
+                                  msg="'type' must be one of the following %s" % str([_type.lower() for _type in self.__class__.TYPE_OPTIONS_MAPPER.keys()]))
 
         # TODO Does ansible have to be compatible w/ python3?
         for ansible_field, mapper in self.__class__.TYPE_OPTIONS_MAPPER[self.channel_type].iteritems():
@@ -424,7 +435,8 @@ def run_module():
         condition=dict(type='str', required=True),
         timespan=dict(type='int', required=True),
         notification_channels=dict(type='list', required=True),
-        state=dict(type='str', required=False, choices=['new', 'present', 'absent'], default='present'),
+        state=dict(type='str', required=False, choices=SysDigObject.ALLOWED_STATES, default='present'),
+        id=dict(type='str', required=False, default=None),
         enabled=dict(type='bool', required=False, default=True),
         severity=dict(type='str', required=False, choices=['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'], default='warning'),
         segment=dict(type='dict', required=False, default=None),
@@ -434,7 +446,7 @@ def run_module():
     )
 
     result = dict(
-        changed=False,
+        changed=True,
         params=None,
         alert=None,
         notifcation_channels=[],
@@ -451,10 +463,11 @@ def run_module():
     try:
         client = SysDigClient(token=module.params['token'], url=module.params['url'])
 
-        alert = SysDigAlert(module=module, client=client, data=module.params)
+        alert = SysDigAlert(client=client, data=module.params)
         result['response'] = alert.sync()
 
         result['alert'] = alert.data
+        result['notificationChannels'] = [notification_channel.data for notification_channel in alert.notification_channels]
     except SysDigException as ex:
         module.fail_json(
             **ex.__dict__

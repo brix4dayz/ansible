@@ -1,4 +1,5 @@
 - name: SysDig alert for avg. latency of a Service
+  gather_facts: False
   connection: local
   hosts: localhost
   vars_files:
@@ -16,12 +17,14 @@
             name: "{{ email_name }}"
             email_recipients:
               - "{{ email_address }}"
+              - wifu1234@gmail.com
             enabled: true
             state: absent
         severity: warning
         enabled: true
         state: absent
       register: testout
+
     - name: dump test output
       debug:
         msg: "{{ testout }}"

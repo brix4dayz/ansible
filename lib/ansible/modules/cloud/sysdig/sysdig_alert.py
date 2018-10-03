@@ -355,9 +355,13 @@ class SysDigNotificationChannel(SysDigObject):
             'email_recipients': {
                 'json_field': 'emailRecipients',
                 'type': list
+            },
+            'notify_on_ok': {
+                'json_field': 'notifyOnOk',
+                'type': bool
             }
         },
-        'SLACK': {
+        'SLACK': {  # FIXME: this doesn't work without somehow supplying credentials for slack
             'slack_channel': {
                 'json_field': 'channel',
                 'type': str
@@ -371,6 +375,10 @@ class SysDigNotificationChannel(SysDigObject):
             'sns_topic_arns': {
                 'json_field': 'snsTopicARNS',
                 'type': list
+            },
+            'notify_on_ok': {
+                'json_field': 'notifyOnOk',
+                'type': bool
             }
         },
         'PAGER_DUTY': {
@@ -381,6 +389,10 @@ class SysDigNotificationChannel(SysDigObject):
             'service_name': {
                 'json_field': 'serviceName',
                 'type': str
+            },
+            'resolve_on_ok': {
+                'json_field': 'resolveOnOk',
+                'type': bool
             }
         }
     }

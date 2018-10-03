@@ -361,6 +361,10 @@ class SysDigNotificationChannel(SysDigObject):
             'slack_channel': {
                 'json_field': 'channel',
                 'type': str
+            },
+            'notify_on_ok': {
+                'json_field': 'notifyOnOk',
+                'type': bool
             }
         },
         'SNS': {
